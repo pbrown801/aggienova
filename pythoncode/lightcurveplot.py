@@ -137,6 +137,8 @@ plt.gca().get_xaxis().get_major_formatter().set_useOffset(False)
 #The line above makes sure that the x axis is formatted correctly. The Offset option in matplotlib is automatically activated, so for big
 #numbers like the MJD, it cuts it off in a strange way that is awful to look at. This makes it readable.
 
+
+# good luck
 fig.savefig(savename) #you can uncomment this line if you want to save the figure to the SN file
 
 fig.show()
