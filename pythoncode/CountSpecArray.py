@@ -1,13 +1,25 @@
 import numpy as np
 import matplotlib.pyplot as plt
+from speccounts import *
 
 
-spectra_file_input = input("What spectra file do you want to use?: ")       # User inputs spectra file name including extension
-filter_file_input = input("What filter file do you want to use?: ")         # User inputs filter file name including extension
-spectra_file_name = ('../spectra/%s' % (spectra_file_input))                # Path is relative, might need to be changed for different computers 
-filter_file_name = ('../filters/%s' % (filter_file_input))                  # Path is relative again, change as needed 
+spectra_file_input = input("What spectra file do you want to use?:  (use full path) ")       # User inputs spectra file name including extension
+spectra_file_name = ('%s' % (spectra_file_input))                # Path is relative, might need to be changed for different computers 
+#spectra_file_name = '/Users/supernova/Desktop/SN/github/UVSN/hst_rawdata/SN2022hrs/SN2022hrs_muv_20220422.4_5.dat'
 spectra_file_load = np.loadtxt(spectra_file_name)
+
+filter_file_input = input("What filter file do you want to use?: (use name in ../filters/) ")         # User inputs filter file name including extension
+filter_file_name = ('../filters/%s' % (filter_file_input))                  # Path is relative again, change as needed 
+#filter_file_name = ('../filters/UVW1_2010.txt')                  # Path is relative again, change as needed 
 filter_file_load = np.loadtxt(filter_file_name)
+
+
+wave,flux = np.loadtxt(spectra_file_name,dtype=float,usecols=(0,1),unpack=True)
+
+specin_countsout(wave,flux)
+
+#print('mag array')
+#print(mag_array)
 
 wavelength_spectra = []
 flux_spectra = []
@@ -25,7 +37,7 @@ for i in range(0, len(filter_file_load)):
 
 fig, axes = plt.subplots()                                                  # First plot, plots wavelength spectra against the flux 
 plt.plot(wavelength_spectra, flux_spectra)
-plt.xlim(0,20000)                                                           # Limit is 20,000 so the graph is viewable 
+plt.xlim(1600,6000)                                                           # Limit is 20,000 so the graph is viewable 
 plt.xlabel('wavelength spectra')
 plt.ylabel('flux spectra')
 
@@ -105,13 +117,13 @@ fig = plt.figure()
 ax=fig.add_subplot(111, label=1)
 ax2=fig.add_subplot(111, label=2, frame_on=False)
 
-ax.plot(wavelength_filters, ergs, color = 'C0', label=spectra_file_input)
+ax.plot(wavelength_filters, ergs, color = 'C0', label=spectra_file_name)
 ax.set_xlabel('wavelength_filter', color = 'C0')
 ax.set_ylabel('ergs_1', color = 'C0')
 ax.tick_params(axis='x', colors="C0")
 ax.tick_params(axis='y', colors="C0")
 
-ax2.plot(wavelength_filters, ergs_2, color = 'C3', label=spectra_file_input_2)
+ax2.plot(wavelength_filters, ergs_2, color = 'C3', label=spectra_file_name_2)
 ax2.set_xlabel('wavelength_filter', color = 'C3')
 ax2.set_ylabel('ergs_2', color = 'C3')
 ax2.xaxis.tick_top()

@@ -1,5 +1,3 @@
-import numpy as np
-import matplotlib.pyplot as plt
 '''
 How to call this function:
 
@@ -117,8 +115,6 @@ def specin_countsout(wavez,fluxz):
 
         mag_array[x] = -2.5*np.log10(counts_array[x])+zeropoints[x] ### Calculated magnitudes
 
-        print(" UVOT mags ")
-        print(mag_array)
     return counts_array, mag_array
 
 
