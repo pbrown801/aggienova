@@ -3,14 +3,14 @@ import matplotlib.pyplot as plt
 from speccounts import *
 
 
-spectra_file_input = input("What spectra file do you want to use?:  (use full path) ")       # User inputs spectra file name including extension
-spectra_file_name = ('%s' % (spectra_file_input))                # Path is relative, might need to be changed for different computers 
-#spectra_file_name = '/Users/supernova/Desktop/SN/github/UVSN/hst_rawdata/SN2022hrs/SN2022hrs_muv_20220422.4_5.dat'
+#spectra_file_input = input("What spectra file do you want to use?:  (use full path) ")       # User inputs spectra file name including extension
+#spectra_file_name = ('%s' % (spectra_file_input))                # Path is relative, might need to be changed for different computers 
+spectra_file_name = '../spectra/SN2011fe_uv.dat'
 spectra_file_load = np.loadtxt(spectra_file_name)
 
-filter_file_input = input("What filter file do you want to use?: (use name in ../filters/) ")         # User inputs filter file name including extension
-filter_file_name = ('../filters/%s' % (filter_file_input))                  # Path is relative again, change as needed 
-#filter_file_name = ('../filters/UVW1_2010.txt')                  # Path is relative again, change as needed 
+#filter_file_input = input("What filter file do you want to use?: (use name in ../filters/) ")         # User inputs filter file name including extension
+#filter_file_name = ('../filters/%s' % (filter_file_input))                  # Path is relative again, change as needed 
+filter_file_name = ('../filters/UVW1_2010.txt')                  # Path is relative again, change as needed 
 filter_file_load = np.loadtxt(filter_file_name)
 
 
@@ -98,7 +98,8 @@ plt.xlabel('wavelength_filters')
 plt.ylabel('ergs/s/angstrom')
 
 # Start pulling data from a second spectrum, not required for the file to work 
-spectra_file_input_2 = input("What is the second spectra file that you want to use?: ")
+#spectra_file_input_2 = input("What is the second spectra file that you want to use? ")
+spectra_file_input_2 = '../spectra/vega.dat'
 spectra_file_name_2 = ('../spectra/%s' % (spectra_file_input_2))
 spectra_file_load_2 = np.loadtxt(spectra_file_name_2)
 
