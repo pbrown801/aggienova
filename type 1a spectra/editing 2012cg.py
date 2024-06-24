@@ -1,5 +1,6 @@
 # extinction code to edit 2012cg
 
+# calling in the filters
 Vdata = pd.read_csv('V_P08.txt', delim_whitespace=True, comment='#')
 Vdata.columns = ['Wavelength', 'Area']
 
