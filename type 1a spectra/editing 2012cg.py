@@ -1,6 +1,10 @@
 # extinction code to edit 2012cg
+from pyphot import Filter
+import pandas as pd
+import numpy as np
+import extinction
 
-# calling in the filters
+# calling in the filters, you can use UVM2_2010.txt, UVW1_2010.txt, etc...
 Vdata = pd.read_csv('V_P08.txt', delim_whitespace=True, comment='#')
 Vdata.columns = ['Wavelength', 'Area']
 
