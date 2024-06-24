@@ -59,10 +59,6 @@ def kfun(wave, flux):
 wave = data['SN_Wavelength'].values
 flux = data['SN_Flux'].values
 
-# defining the values for wave and flux in the function
-wave = data['SN_Wavelength'].values
-flux = data['SN_Flux'].values
-
 mag = kfun(wave, flux)
 print(mag)
 
