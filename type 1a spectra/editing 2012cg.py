@@ -11,7 +11,7 @@ data.columns = ['SN_Wavelength', 'SN_Flux']
 wave = data['SN_Wavelength'].values
 flux = data['SN_Flux'].values
 
-# redshift (or de-redden) the magnitude using the extinction code, ebv=1, rv=3.1, so that av=3.1
+# redshift (or de-redden) the magnitude using the extinction code; if you're eyeballing it, use rv = 3.1, but mess around with ebv
 rv = 3.1
 ebv = 0.1
 av = rv * ebv
