@@ -1,20 +1,32 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import math
-from operator import itemgetter
-
+import operator
 
 snname = 'SN2015F'
-filename = snname + '_uvotB15.1.dat'
+filename = '../SOUSA/'+snname + '_uvotB15.1.dat'
 data = open(filename, 'r')
 
 for line in data:
 	if not line[0]== '#':
 		continue
-	lines = np.genfromtxt(data, dtype=[('filter', 'S20'),('mjd',float),('mag',None),('magerr',None),('exposure',float),('elapse',float)], usecols=(0,1,2,3,10,11), unpack= True)
+	lines = np.genfromtxt(data, dtype=[('filter', 'S9'),('mjd',float),('mag',float),('magerr',float),('exposure',float),('elapse',float)], usecols=(0,1,2,3,10,11), unpack= True)
+	
+for entry in lines[0]:
+	print(entry)
+	entry=entry.decode('UTF-8')
+	print(entry, type(entry))
+	print(' ')
+
 
 #Sorting SN into groups based on MJD +/- dt
-mjdsorted = sorted(lines, key=itemgetter(1))
+
+print(lines[0])
+
+
+
+mjdsorted = sorted(lines, key=operator.itemgetter(1,4) )
+
 dt = 0.1500
 ends = mjdsorted[0][1]
 mjdgrouped = []

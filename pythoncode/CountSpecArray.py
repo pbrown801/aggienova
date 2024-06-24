@@ -5,12 +5,15 @@ from speccounts import *
 
 #spectra_file_input = input("What spectra file do you want to use?:  (use full path) ")       # User inputs spectra file name including extension
 #spectra_file_name = ('%s' % (spectra_file_input))                # Path is relative, might need to be changed for different computers 
-spectra_file_name = '../spectra/SN2011fe_uv.dat'
+spectra_file_name = '../spectra/SN2016ccj_hst_20160514.dat'
+
+spectra_file_name = '../spectra/ptf11kly_20110910.obs.dat'
+
 spectra_file_load = np.loadtxt(spectra_file_name)
 
 #filter_file_input = input("What filter file do you want to use?: (use name in ../filters/) ")         # User inputs filter file name including extension
 #filter_file_name = ('../filters/%s' % (filter_file_input))                  # Path is relative again, change as needed 
-filter_file_name = ('../filters/UVW1_2010.txt')                  # Path is relative again, change as needed 
+filter_file_name = ('../filters/UVW2_2010.txt')                  # Path is relative again, change as needed 
 filter_file_load = np.loadtxt(filter_file_name)
 
 
@@ -44,7 +47,7 @@ plt.ylabel('flux spectra')
 fig, axes = plt.subplots()                                                  # Second plot, plots wavelength filters against the area filters 
 plt.plot(wavelength_filters, area_filters)
 plt.xlabel('wavelength_filters')
-plt.ylabel('area_filters')
+plt.ylabel('Filter Effective Area [cm^2]')
 
 interpolated_data = np.interp(wavelength_filters, wavelength_spectra, flux_spectra)
 ergs = np.array(interpolated_data) * np.array(area_filters)
@@ -99,7 +102,7 @@ plt.ylabel('ergs/s/angstrom')
 
 # Start pulling data from a second spectrum, not required for the file to work 
 #spectra_file_input_2 = input("What is the second spectra file that you want to use? ")
-spectra_file_input_2 = '../spectra/vega.dat'
+spectra_file_input_2 = '../spectra/SN2022hrs_muv_20220426.3_10.dat'
 spectra_file_name_2 = ('../spectra/%s' % (spectra_file_input_2))
 spectra_file_load_2 = np.loadtxt(spectra_file_name_2)
 
