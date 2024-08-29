@@ -3,7 +3,7 @@ How to call this function:
 
 In the header of your program, type:
 
-from speccounts import *
+from specin_countsout import *
 
 using the code, type into your program:
 
@@ -22,7 +22,7 @@ a new array if you plan to do anything else with the magnitudes.
 
 '''
 
-
+import numpy as np
 
 #Vega for reference#
 
@@ -74,17 +74,17 @@ def specin_countsout(wavez,fluxz):
         filter_lambda = np.asarray(filter_lambda,dtype=float)
         filter_area = np.asarray(filter_area,dtype=float)
 
-        nonzero = np.where(filter_area > 0.0)
+        #nonzero = np.where(filter_area > 0.0)
 
-        filter_lambda = filter_lambda[nonzero]
-        filter_area = filter_area[nonzero]
+        #filter_lambda = filter_lambda[nonzero]
+        #filter_area = filter_area[nonzero]
 
         filter_WL.append(filter_lambda)
         filter_A.append(filter_area)
 
         f.close()
 
-
+    np.shape(filter_WL)
 
     ##########################################
 
