@@ -1,4 +1,3 @@
-#   s0 comment "/Users/pbrown/Desktop/Dropbox/SN/SN2017erp/hstdata/SN2017erp_hst_20170629.dat"
 1600 1.1318794e-17
 1605 3.2650821e-17
 1610 -1.4293328e-16
@@ -788,8 +787,6 @@
 5540 1.2449102e-14
 5545 1.2755796e-14
 5550 1.3088158e-14
-#  s1 comment "/Users/pbrown/Desktop/Dropbox/SN/SN2017erp/lco_spec/SN2017erp-SALT-20170629.dat"
-# scaled to match HST spectrum near trim region
 5550.9146 1.3126144e-14
 5551.8485 1.3224635e-14
 5552.7824 1.3299851e-14
