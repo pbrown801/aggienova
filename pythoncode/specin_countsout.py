@@ -125,3 +125,5 @@ component is the calculated w2 magnitude, the second component is the m2 calcula
 the way to v band calculated magnitude. The order of the magnitude reflects the order of filtercurves.
 '''
 
+vegacounts, vegamags=specin_countsout(vega_wave,vega_flux)
+print("Vega output mags ", vegamags)
