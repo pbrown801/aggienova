@@ -3,8 +3,8 @@ import numpy as np
 
 snname = 'sn name' # the name of the SN you are fitting the light curve for
 path = '' # wherever you want
-filename = 'sn name_uvotB15.1.dat'
-savename = 'sn name_pylightcurve.jpg'
+filename = '../SOUSA/Gaia16pad_uvotB15.1.dat'
+savename = 'Gaia16pad_pylightcurve.jpg'
 data = open(filename, 'r')
 
 # putting in the data, note: in the open brackets you put in the numbers provided in the .dat file
@@ -74,6 +74,10 @@ ax.plot(uvm2mjd, uvm2mag, linestyle='-', marker='*', label='UVW2', color='xkcd:m
 ax.plot(umjd, umag, linestyle='-', marker='D', label='UVW2', color='xkcd:violet')
 ax.plot(bmjd, bmag, linestyle='-', marker='s', label='UVW2', color='xkcd:b')
 ax.plot(vmjd, vmag, linestyle='-', marker='^', label='UVW2', color='xkcd:g')
+
+
+
+
 
 ax.set_title(f'sn name')
 ax.set_xlabel('Modern Julian Date')
