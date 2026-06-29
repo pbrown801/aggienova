@@ -30,10 +30,7 @@ T = float(input("Enter temperature in Kelvin: "))
  
 # ---------------------------------------------------------------------------
 # Blackbody spectrum
-# Wavelength range chosen to cover all 6 UVOT filters (UVW2~1600-2800 A
-# through V~5000-6000 A), plus extended IR tail.
-# Starting at 100 A avoids exp() overflow; 30000 A captures the red tail
-# comfortably for T > ~3000 K.
+# Wavelength range chosen to cover all 6 UVOT filters
 # ---------------------------------------------------------------------------
 l_a = np.linspace(100, 30000, 10000)   # wavelength in Angstrom
 l_cm = l_a * 1e-8                      # convert to cm for Planck formula
@@ -42,9 +39,8 @@ exponent = h * c / (l_cm * k * T)
 # Planck function in erg/s/cm^2/cm/sr, multiplied by pi for hemispherical flux
 flux_per_cm = np.pi * (2 * h * c**2 / l_cm**5) / (np.exp(exponent) - 1)
  
-# Convert from per-cm to per-Angstrom  (1 cm = 1e8 Angstrom, so divide by 1e8)
-# specin_countsout expects flux in erg/s/cm^2/Ang
-flux = flux_per_cm * 1e-8              # erg/s/cm^2/Ang  <-- required units
+# Conversion
+flux = flux_per_cm * 1e-8              # erg/s/cm^2/Ang
  
 # ---------------------------------------------------------------------------
 # Plot the blackbody spectrum
@@ -70,13 +66,13 @@ plt.show()
  
 # ---------------------------------------------------------------------------
 # Synthetic photometry via specin_countsout
-# Passes the blackbody (l_a, flux) directly — units already match
+# Passes the blackbody (l_a, flux) directly
 # ---------------------------------------------------------------------------
 counts, mags = specin_countsout(l_a, flux)
 wien = 2.898e7 / T
 
 # ---------------------------------------------------------------------------
-# Print results
+# Print results (delete)
 # ---------------------------------------------------------------------------
 print(f"\nBlackbody T = {T:.0f} K  —  Synthetic UVOT Photometry")
 print(f"{'Filter':<8} {'Counts':>15}   {'Vega Mag':>9}")
