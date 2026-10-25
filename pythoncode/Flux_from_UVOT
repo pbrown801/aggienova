@@ -1,0 +1,154 @@
+import argparse
+import sys
+from pathlib import Path
+
+import numpy as np
+
+_integrate = getattr(np, "trapezoid", None) or np.trapz
+
+H_PLANCK = 6.6260755e-27     # Planck constant            [erg s]
+C_ANGSTROM = 2.99792458e18   # speed of light             [Angstrom / s]
+K_BOLTZ = 1.380658e-16       # Boltzmann constant         [erg / K]
+HC = H_PLANCK * C_ANGSTROM   # h*c                        [erg Angstrom]
+PARSEC_CM = 3.0857e18        # one parsec                 [cm]
+AB_FNU = 3.631e-20           # AB zero-point flux density [erg/s/cm^2/Hz]  (= 3631 Jy)
+
+FILTER_FILES = {
+    "UVW2": "UVW2_2010.txt",
+    "UVM2": "UVM2_2010.txt",
+    "UVW1": "UVW1_2010.txt",
+    "U":    "U_UVOT.txt",
+    "B":    "B_UVOT.txt",
+    "V":    "V_UVOT.txt",
+}
+
+
+def find_repo_root(hint=None):
+    candidates = []
+    if hint:
+        candidates.append(Path(hint))
+    here = Path(__file__).resolve().parent
+    candidates += [here, here.parent, Path.cwd(), Path.cwd().parent]
+    for c in candidates:
+        if (c / "filters").is_dir() and (c / "spectra" / "vega.dat").is_file():
+            return c
+    sys.exit("Could not find the aggienova folder (needs filters/ and spectra/vega.dat). "
+             "Pass --repo /path/to/aggienova")
+
+
+def load_filter(repo, name):
+    wl, area = np.loadtxt(repo / "filters" / FILTER_FILES[name], usecols=(0, 1), unpack=True)
+    return wl, area
+
+
+def load_spectrum(path):
+    wl, fl = np.loadtxt(path, usecols=(0, 1), unpack=True, comments=("#", "%"))
+    order = np.argsort(wl)                     # np.interp needs increasing wavelengths
+    return wl[order], fl[order]
+
+
+def blackbody_flux(wave, temperature, radius_cm=None, distance_cm=None):
+
+    lam_cm = wave * 1e-8                                    # Angstrom -> cm
+    x = np.minimum(H_PLANCK * 2.99792458e10 / (lam_cm * K_BOLTZ * temperature), 700)  # cap avoids overflow
+    # B_lambda in erg/s/cm^2/cm/sr, then * pi (sr -> flux), then * 1e-8 (per cm -> per Angstrom)
+    b_lam = 2 * H_PLANCK * 2.99792458e10 ** 2 / lam_cm ** 5 / np.expm1(x)
+    flux = np.pi * b_lam * 1e-8
+    if radius_cm is not None and distance_cm is not None:
+        flux = flux * (radius_cm / distance_cm) ** 2
+    return flux
+
+
+def count_rate(wave, flux, filt_wl, filt_area):
+
+    lo = filt_wl[filt_area > 0].min()
+    hi = filt_wl[filt_area > 0].max()
+
+    # Refuse to answer if the spectrum does not span the whole filter band.
+    if wave.min() > lo or wave.max() < hi:
+        return np.nan
+
+    grid = np.union1d(filt_wl[(filt_wl >= lo) & (filt_wl <= hi)],
+                      wave[(wave >= lo) & (wave <= hi)])
+    area_on_grid = np.interp(grid, filt_wl, filt_area)
+    flux_on_grid = np.interp(grid, wave, flux)
+    return _integrate(area_on_grid * flux_on_grid * grid / HC, grid)
+
+
+def measure_magnitudes(wave, flux, repo=None, filters=None):
+
+    repo = find_repo_root(repo) if not isinstance(repo, Path) else repo
+    filters = filters or list(FILTER_FILES)
+    vega_wl, vega_fl = load_spectrum(repo / "spectra" / "vega.dat")
+
+    out = {}
+    for name in filters:
+        fw, fa = load_filter(repo, name)
+
+        n_src = count_rate(wave, flux, fw, fa)
+        n_vega = count_rate(vega_wl, vega_fl, fw, fa)
+
+        # Flat-f_nu (AB) reference spectrum on a fine grid across this filter
+        ab_wave = np.arange(fw.min(), fw.max() + 1.0, 1.0)
+        ab_flux = AB_FNU * C_ANGSTROM / ab_wave ** 2
+        n_ab = count_rate(ab_wave, ab_flux, fw, fa)
+
+        # Pivot wavelength (see report, Eq. for lambda_pivot): the filter's "center"
+        pivot = np.sqrt(_integrate(fa * fw, fw) / _integrate(fa / fw, fw))
+
+        with np.errstate(divide="ignore", invalid="ignore"):
+            out[name] = {
+                "counts": n_src,
+                "vega_mag": -2.5 * np.log10(n_src / n_vega) if n_src > 0 else np.nan,
+                "ab_mag": -2.5 * np.log10(n_src / n_ab) if n_src > 0 else np.nan,
+                "pivot_A": pivot,
+            }
+    return out
+
+
+def print_table(results, title):
+    print(f"\n{title}")
+    print(f"{'Filter':<6}{'Pivot [A]':>10}{'Counts [1/s]':>15}{'Vega mag':>11}{'AB mag':>10}")
+    print("-" * 52)
+    for name, r in results.items():
+        if np.isnan(r["counts"]):
+            print(f"{name:<6}{r['pivot_A']:>10.0f}{'-- spectrum does not cover this filter --':>36}")
+        else:
+            print(f"{name:<6}{r['pivot_A']:>10.0f}{r['counts']:>15.4e}{r['vega_mag']:>11.3f}{r['ab_mag']:>10.3f}")
+
+
+def main():
+    p = argparse.ArgumentParser(description="Synthetic Swift/UVOT magnitudes from a spectrum.")
+    src = p.add_mutually_exclusive_group(required=True)
+    src.add_argument("--spectrum", help="2-column file: wavelength [A], flux [erg/s/cm^2/A]")
+    src.add_argument("--blackbody", type=float, metavar="T_K", help="blackbody temperature in Kelvin")
+    src.add_argument("--vega", action="store_true", help="self-test on Vega (should give 0 mag)")
+    p.add_argument("--filter", choices=list(FILTER_FILES), help="one filter only (default: all six)")
+    p.add_argument("--radius", type=float, help="blackbody radius [cm] (needs --distance-mpc)")
+    p.add_argument("--distance-mpc", type=float, help="distance in Mpc (needs --radius)")
+    p.add_argument("--repo", help="path to the aggienova folder (auto-detected by default)")
+    a = p.parse_args()
+
+    repo = find_repo_root(a.repo)
+    filt = [a.filter] if a.filter else None
+
+    if a.spectrum:
+        wave, flux = load_spectrum(a.spectrum)
+        title = f"Spectrum: {a.spectrum}"
+    elif a.vega:
+        wave, flux = load_spectrum(repo / "spectra" / "vega.dat")
+        title = "Vega self-test (Vega mags must be 0)"
+    else:
+        wave = np.arange(100.0, 30000.0, 5.0)
+        r = a.radius
+        d = a.distance_mpc * 1e6 * PARSEC_CM if a.distance_mpc else None
+        if (r is None) != (d is None):
+            sys.exit("--radius and --distance-mpc must be given together")
+        flux = blackbody_flux(wave, a.blackbody, r, d)
+        title = f"Blackbody T = {a.blackbody:.0f} K" + (" (scaled to R and d)" if r else " (surface flux, unscaled)")
+
+    print_table(measure_magnitudes(wave, flux, repo, filt), title)
+
+
+if __name__ == "__main__":
+    main()
