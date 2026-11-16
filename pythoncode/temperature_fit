@@ -1,0 +1,277 @@
+import argparse
+import sys
+
+import numpy as np
+from scipy.interpolate import CubicSpline
+from scipy.stats import chi2 as chi2_dist
+import matplotlib
+matplotlib.use("Agg")                      # write to file; works with no display
+import matplotlib.pyplot as plt
+
+from Flux_from_UVOT import (FILTER_FILES, PARSEC_CM, blackbody_flux,
+                             find_repo_root, measure_magnitudes)
+
+
+FILTER_ORDER = list(FILTER_FILES)          # ['UVW2', 'UVM2', 'UVW1', 'U', 'B', 'V']
+# The 5 colors are neighbouring filters, blue minus red. Smaller = bluer = hotter.
+COLOR_PAIRS = [(FILTER_ORDER[i], FILTER_ORDER[i + 1]) for i in range(5)]
+COLOR_LABELS = [f"{a}-{b}" for a, b in COLOR_PAIRS]
+
+T_MIN, T_MAX = 3000.0, 40000.0             # model temperature range [K]
+COARSE_STEP = 250.0                        # blackbody actually computed every 250 K ...
+FINE_STEP = 10.0                           # ... then spline-interpolated to every 10 K
+WAVE = np.arange(100.0, 30000.0, 5.0)      # wavelength grid [Angstrom], covers all filters
+RADIUS_CM, DISTANCE_MPC = 1e15, 10.0       # arbitrary; they cancel in colors
+
+def build_model_grid(t_min=T_MIN, t_max=T_MAX, coarse=COARSE_STEP, fine=FINE_STEP):
+    """
+    Return (T_fine, colors_fine) where colors_fine[i, j] is color j of a blackbody
+    at temperature T_fine[i]. Same calculation as blackbody_colors.py.
+    """
+    repo = find_repo_root()
+    dist_cm = DISTANCE_MPC * 1e6 * PARSEC_CM
+    t_coarse = np.arange(t_min, t_max + coarse / 2, coarse)
+
+    colors = np.empty((len(t_coarse), len(COLOR_PAIRS)))
+    for i, T in enumerate(t_coarse):
+        flux = blackbody_flux(WAVE, T, RADIUS_CM, dist_cm)
+        res = measure_magnitudes(WAVE, flux, repo)
+        for j, (a, b) in enumerate(COLOR_PAIRS):
+            colors[i, j] = res[a]["vega_mag"] - res[b]["vega_mag"]
+
+    # Colors vary smoothly with T, so a cubic spline between the coarse points is
+    # accurate (checked in validate_fit_temperature.py) and far faster than
+    # recomputing the blackbody at every 10 K.
+    t_fine = np.arange(t_min, t_max + fine / 2, fine)
+    return t_fine, CubicSpline(t_coarse, colors, axis=0)(t_fine)
+
+def observed_colors(mags, errs):
+    """
+    Return (colors, covariance) for the 5 neighbouring colors.
+
+    color_i = m_i - m_(i+1);  variance = err_i^2 + err_(i+1)^2.
+    Colors i and i+1 share magnitude m_(i+1), so they are anti-correlated:
+    covariance = -err_(i+1)^2.  Entries that need a missing (nan) magnitude are nan.
+    """
+    m = np.asarray(mags, float)
+    e = np.asarray(errs, float)
+    if m.shape != (6,) or e.shape != (6,):
+        raise ValueError("need 6 magnitudes and 6 errors, in order UVW2 UVM2 UVW1 U B V")
+    if np.any(e[np.isfinite(m)] <= 0):
+        raise ValueError("errors must be positive for every magnitude that is given")
+
+    colors = m[:-1] - m[1:]
+    cov = np.zeros((5, 5))
+    for i in range(5):
+        cov[i, i] = e[i] ** 2 + e[i + 1] ** 2
+        if i < 4:
+            cov[i, i + 1] = cov[i + 1, i] = -e[i + 1] ** 2
+    return colors, cov
+
+def _crossing(T, y, i_min, level, direction):
+    """
+    Walk from the minimum (index i_min) outward and return the temperature where y
+    first rises to `level`, by linear interpolation. direction = -1 (cooler) or +1
+    (hotter). Returns None if y never reaches `level` before the grid ends.
+    """
+    i = i_min
+    while 0 <= i + direction < len(T):
+        j = i + direction
+        if y[j] >= level:
+            frac = (level - y[i]) / (y[j] - y[i])
+            return T[i] + frac * (T[j] - T[i])
+        i = j
+    return None
+
+def fit_temperature(mags, errs, correlated=True, delta_chi2=1.0, grid=None,
+                    use_colors=None):
+    """
+    Fit a blackbody temperature to a set of UVOT magnitudes.
+
+    Parameters
+    ----------
+    mags, errs : length-6 sequences, order UVW2 UVM2 UVW1 U B V (nan = not measured)
+    correlated : full covariance matrix (True, default, recommended) or independent
+                 colors (False)
+    delta_chi2 : how far chi2 may rise for the interval. 1.0 = 1-sigma (68%);
+                 2.71 = 90%; 4.0 = 2-sigma (95%) -- for one fitted parameter.
+    grid       : optional (T_fine, colors_fine) from build_model_grid(), to reuse
+    use_colors : optional list of color names to fit, e.g. ["U-B", "B-V"]. Default: all 5.
+                 Real supernovae are NOT blackbodies in the UV (metal lines absorb it), so
+                 fitting only the optical colors gives a cleaner "color temperature", and
+                 the UV colors then show how far the supernova departs from a blackbody.
+
+    Returns a dict with T_best, T_minus, T_plus (uncertainty), chi2_min, dof, etc.
+    T_minus / T_plus are None if chi2 never rises by delta_chi2 inside the grid
+    (the temperature is then only a limit on that side).
+    """
+    T, model = grid if grid is not None else build_model_grid()
+    obs, cov = observed_colors(mags, errs)
+
+    ok = np.isfinite(obs)                          # colors we can actually use
+    if use_colors is not None:                     # ... and that the caller wants used
+        bad = [c for c in use_colors if c not in COLOR_LABELS]
+        if bad:
+            raise ValueError(f"unknown color(s) {bad}; choose from {COLOR_LABELS}")
+        ok &= np.array([lab in use_colors for lab in COLOR_LABELS])
+    n_colors = int(ok.sum())
+    if n_colors < 2:
+        raise ValueError("need at least 2 usable colors (>= 3 measured filters)")
+    obs_u, model_u = obs[ok], model[:, ok]
+    cov_u = cov[np.ix_(ok, ok)]
+
+    # --- chi-square at every temperature -----------------------------------
+    resid = obs_u[None, :] - model_u               # shape (n_T, n_colors)
+    if correlated:
+        chi2 = np.einsum("ti,ij,tj->t", resid, np.linalg.inv(cov_u), resid)
+    else:
+        chi2 = np.sum(resid ** 2 / np.diag(cov_u)[None, :], axis=1)
+
+    # --- best temperature = minimum chi-square -----------------------------
+    i_min = int(np.argmin(chi2))
+    chi2_min = float(chi2[i_min])
+    T_best = float(T[i_min])
+
+    # --- uncertainty = where chi2 = chi2_min + delta_chi2 ------------------
+    level = chi2_min + delta_chi2
+    T_lo = _crossing(T, chi2, i_min, level, -1)
+    T_hi = _crossing(T, chi2, i_min, level, +1)
+
+    dof = n_colors - 1                             # 1 fitted parameter (T)
+    return {
+        "T_best": T_best,
+        "T_lo": T_lo, "T_hi": T_hi,
+        "T_minus": None if T_lo is None else T_best - T_lo,
+        "T_plus": None if T_hi is None else T_hi - T_best,
+        "chi2_min": chi2_min, "dof": dof,
+        "chi2_red": chi2_min / dof,
+        "p_value": float(chi2_dist.sf(chi2_min, dof)),
+        "at_grid_edge": i_min in (0, len(T) - 1),
+        "delta_chi2": delta_chi2, "correlated": correlated,
+        "T_grid": T, "chi2_grid": chi2, "model_colors": model,
+        "obs_colors": obs, "obs_color_err": np.sqrt(np.diag(cov)), "used": ok,
+    }
+    
+def describe(r):
+    """Return a printable summary of a fit result."""
+    def side(x, sign):
+        return f"{sign}{x:.0f}" if x is not None else f"{sign}(unbounded)"
+    lines = [
+        f"Best-fit temperature : {r['T_best']:.0f} K  "
+        f"({side(r['T_plus'], '+')} / {side(r['T_minus'], '-')} K, "
+        f"delta chi2 = {r['delta_chi2']:g})",
+        f"chi2_min             : {r['chi2_min']:.2f} for {r['dof']} degrees of freedom "
+        f"(reduced = {r['chi2_red']:.2f}, p = {r['p_value']:.2f})",
+        f"Error treatment      : {'full covariance' if r['correlated'] else 'independent colors'}",
+    ]
+    if r["at_grid_edge"]:
+        lines.append("WARNING: minimum is at the edge of the temperature grid -- "
+                     "the true best temperature may lie outside it.")
+    if r["T_lo"] is None or r["T_hi"] is None:
+        lines.append("WARNING: chi2 never rises by delta_chi2 on one side within the grid: "
+                     "the colors only give a limit there (typical above ~15000 K).")
+    if r["p_value"] < 0.01:
+        lines.append("WARNING: poor fit (p < 0.01). The object may not look like a blackbody, "
+                     "or the errors are underestimated; the quoted uncertainty is optimistic.")
+    return "\n".join(lines)
+
+
+def plot_fit(r, filename="temperature_fit.png", truth=None):
+    """Left: chi2 vs temperature. Right: observed colors vs the best-fit blackbody."""
+    T, chi2 = r["T_grid"], r["chi2_grid"]
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4.8))
+
+    # --- left: chi-square curve ------------------------------------------------
+    ax1.plot(T, chi2, color="tab:blue", lw=2)
+    ax1.axhline(r["chi2_min"] + r["delta_chi2"], color="gray", ls="--", lw=1,
+                label=fr"$\chi^2_{{min}}+{r['delta_chi2']:g}$")
+    ax1.axvline(r["T_best"], color="tab:red", lw=1.5, label=f"best T = {r['T_best']:.0f} K")
+    lo = r["T_lo"] if r["T_lo"] is not None else T[0]
+    hi = r["T_hi"] if r["T_hi"] is not None else T[-1]
+    ax1.axvspan(lo, hi, color="tab:red", alpha=0.15, label="uncertainty range")
+    if truth is not None:
+        ax1.axvline(truth, color="k", ls=":", lw=1.5, label=f"true T = {truth:.0f} K")
+    top = max(r["chi2_min"] + 25, 30)
+    ax1.set_ylim(0, top)
+    inside = T[chi2 <= top]                         # zoom x-axis on where the curve is visible
+    pad = 0.1 * (inside.max() - inside.min() + 1)
+    ax1.set_xlim(max(T[0], inside.min() - pad), min(T[-1], inside.max() + pad))
+    ax1.set_xlabel("Blackbody temperature (K)")
+    ax1.set_ylabel(r"$\chi^2$")
+    ax1.set_title(rf"$\chi^2$ of the {int(r['used'].sum())} fitted colors vs. temperature")
+    ax1.grid(alpha=0.3)
+    ax1.legend(fontsize=8)
+
+    # --- right: data vs best-fit model colors -------------------------------------
+    x = np.arange(5)
+    used = r["used"]
+    ax2.errorbar(x[used], r["obs_colors"][used], yerr=r["obs_color_err"][used], fmt="o",
+                 color="k", capsize=3, label="observed (fitted)")
+    if (~used).any():
+        ax2.errorbar(x[~used], r["obs_colors"][~used], yerr=r["obs_color_err"][~used],
+                     fmt="o", mfc="none", color="gray", capsize=3, label="observed (not fitted)")
+    i_best = int(np.argmin(r["chi2_grid"]))
+    ax2.plot(x, r["model_colors"][i_best], "s-", color="tab:red", label="best-fit blackbody")
+    # Band between the models at the cool and hot ends of the uncertainty range
+    i_lo = int(np.argmin(np.abs(T - lo)))
+    i_hi = int(np.argmin(np.abs(T - hi)))
+    ax2.fill_between(x, r["model_colors"][i_lo], r["model_colors"][i_hi],
+                     color="tab:red", alpha=0.15, label="models within uncertainty")
+    ax2.set_xticks(x)
+    ax2.set_xticklabels(COLOR_LABELS, fontsize=8)
+    ax2.set_ylabel("Color (Vega mag)")
+    ax2.set_title("Observed vs. best-fit colors")
+    ax2.grid(alpha=0.3)
+    ax2.legend(fontsize=8)
+
+    fig.tight_layout()
+    fig.savefig(filename, dpi=200)
+    plt.close(fig)
+
+
+def simulate_observation(T_true, err=0.05, seed=1, grid_wave=WAVE):
+    """Make fake 'observed' magnitudes for a blackbody of known T, with Gaussian noise."""
+    rng = np.random.default_rng(seed)
+    flux = blackbody_flux(grid_wave, T_true, RADIUS_CM, DISTANCE_MPC * 1e6 * PARSEC_CM)
+    res = measure_magnitudes(grid_wave, flux, find_repo_root())
+    clean = np.array([res[f]["vega_mag"] for f in FILTER_ORDER])
+    errs = np.full(6, err)
+    return clean + rng.normal(0.0, errs), errs
+
+def main():
+    p = argparse.ArgumentParser(description="Best blackbody temperature from UVOT magnitudes.")
+    p.add_argument("--mags", type=float, nargs=6, metavar=("W2", "M2", "W1", "U", "B", "V"),
+                   help="six magnitudes (use nan for a missing filter)")
+    p.add_argument("--errs", type=float, nargs=6, metavar=("eW2", "eM2", "eW1", "eU", "eB", "eV"),
+                   help="six magnitude errors")
+    p.add_argument("--demo", action="store_true",
+                   help="simulate a 12000 K object with 0.05 mag errors and fit it")
+    p.add_argument("--independent", action="store_true",
+                   help="treat the 5 colors as independent (simple, but overstates the error)")
+    p.add_argument("--use", nargs="+", metavar="COLOR",
+                   help="fit only these colors, e.g. --use U-B B-V  (default: all five)")
+    p.add_argument("--delta-chi2", type=float, default=1.0,
+                   help="chi2 rise defining the interval (1 = 1-sigma, 2.71 = 90%%)")
+    p.add_argument("--out", default="temperature_fit.png", help="output plot filename")
+    a = p.parse_args()
+
+    truth = None
+    if a.demo:
+        truth = 12000.0
+        mags, errs = simulate_observation(truth)
+        print(f"DEMO: simulated a {truth:.0f} K blackbody with noise.")
+        print("  mags:", np.round(mags, 3), "\n  errs:", errs)
+    elif a.mags and a.errs:
+        mags, errs = a.mags, a.errs
+    else:
+        sys.exit("Give --mags and --errs (six numbers each), or use --demo.")
+
+    r = fit_temperature(mags, errs, correlated=not a.independent, delta_chi2=a.delta_chi2,
+                        use_colors=a.use)
+    print("\n" + describe(r))
+    plot_fit(r, a.out, truth)
+    print(f"\nSaved plot -> {a.out}")
+
+
+if __name__ == "__main__":
+    main()
